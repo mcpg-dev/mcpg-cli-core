@@ -1,0 +1,66 @@
+[package]
+name = "mcpg-cli-core"
+version = "0.1.0-beta.13"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared plumbing for MCPG command-line tools: OIDC PKCE login + stored credentials, Bearer/license HTTP client, SSE phase-stream rendering, state-dir paths. Deliberately free of the control-plane server (and its sqlx/tonic tree) so client CLIs stay thin."
+
+[lib]
+
+# Per-module features so light consumers stay light: the gateway links only
+# `paths` (a dirs-only module) — pulling the login stack (axum, webbrowser,
+# jsonwebtoken/aws-lc) into the flagship data-plane binary for a state-dir
+# helper would be absurd. The CLIs use the default (everything).
+[features]
+default = ["paths", "context", "oidc", "login", "client", "stream"]
+paths = ["dep:dirs"]
+context = ["dep:serde", "dep:serde_json"]
+oidc = [
+    "dep:jsonwebtoken",
+    "dep:rand",
+    "dep:sha2",
+    "dep:base64",
+    "dep:reqwest",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio",
+    "dep:url",
+]
+login = [
+    "oidc",
+    "paths",
+    "dep:axum",
+    "dep:webbrowser",
+    "dep:chrono",
+]
+client = ["login"]
+stream = ["dep:reqwest", "dep:futures", "dep:serde_json"]
+
+[dependencies]
+anyhow = "1"
+tracing = "0.1"
+tokio = { version = "1", features = ["full"], optional = true }
+
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+base64 = { version = "0.22", optional = true }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"], optional = true }
+
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"], optional = true }
+futures = { version = "0.3", optional = true }
+url = { version = "2", optional = true }
+dirs = { version = "5", optional = true }
+
+# OIDC: JWKS verify. Single aws-lc-rs build profile, matching cp-core /
+# the server (see cp-core's rustls note on the dual-provider hazard).
+jsonwebtoken = { version = "10.4", default-features = false, features = ["aws_lc_rs"], optional = true }
+rand = { version = "0.8", optional = true }
+sha2 = { version = "0.10", optional = true }
+
+# login: one-shot localhost listener for the OIDC redirect + browser open.
+axum = { version = "0.7", optional = true }
+webbrowser = { version = "1", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
