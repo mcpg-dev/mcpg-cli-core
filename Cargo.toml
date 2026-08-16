@@ -1,6 +1,6 @@
 [package]
 name = "mcpg-cli-core"
-version = "0.1.0-beta.13"
+version = "0.1.0-beta.14"
 edition = "2024"
 license = "Apache-2.0"
 description = "Shared plumbing for MCPG command-line tools: OIDC PKCE login + stored credentials, Bearer/license HTTP client, SSE phase-stream rendering, state-dir paths. Deliberately free of the control-plane server (and its sqlx/tonic tree) so client CLIs stay thin."
