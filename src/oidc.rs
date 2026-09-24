@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use jsonwebtoken::{DecodingKey, Validation};
-use rand::{RngCore, rngs::OsRng};
+use rand::{TryRng, rngs::SysRng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
@@ -133,7 +133,9 @@ impl PkcePair {
     /// verifier; SHA-256(verifier) → base64url challenge.
     pub fn generate() -> Self {
         let mut bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut bytes);
+        SysRng
+            .try_fill_bytes(&mut bytes)
+            .expect("OS randomness unavailable");
         let verifier = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let mut h = Sha256::new();
         h.update(verifier.as_bytes());
@@ -148,7 +150,9 @@ impl PkcePair {
 /// Random URL-safe state parameter for CSRF protection.
 pub fn random_state() -> String {
     let mut bytes = [0u8; 24];
-    OsRng.fill_bytes(&mut bytes);
+    SysRng
+        .try_fill_bytes(&mut bytes)
+        .expect("OS randomness unavailable");
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
