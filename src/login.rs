@@ -33,6 +33,25 @@ pub struct StoredCredentials {
     pub stored_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// The plan and org a license names, as the login summary shows them.
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+struct LicensePreview {
+    plan: String,
+    tenant_slug: String,
+}
+
+/// Read a license's plan and org without verifying it. Its signature is by an
+/// MCPG licence issuer key that the provider's JWKS does not publish; the
+/// control plane checks it against the keys compiled into it.
+fn license_preview(license: &str) -> Option<LicensePreview> {
+    use base64::Engine as _;
+    let payload = license.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 pub async fn run(
     state_dir: &Path,
     issuer_url: &str,
@@ -98,26 +117,15 @@ pub async fn run(
     let email = id_claims.email.clone();
     info!(?email, sub = %id_claims.sub, "id_token verified");
 
-    // License JWT verification (optional — vanilla OIDC providers
-    // omit it). Display-only decode of plan + tenant: full entitlement
-    // enforcement (including the lic_ver schema gate) is the CP's job;
-    // the CLI just shows the operator what they signed in as.
+    // The MCPG license (vanilla OIDC providers omit it), shown to the
+    // operator; the CP verifies it before anything rests on it.
     if let Some(license) = tokens.mcpg_license_jwt.as_deref() {
-        #[derive(Deserialize)]
-        struct LicensePreview {
-            plan: String,
-            tenant_slug: String,
-        }
-        match client
-            .verify_signed_claims::<LicensePreview>(license, &["mcpg-cp"], true)
-            .await
-        {
-            Ok(c) => {
-                println!("  ✓ license:   plan={} tenant={}", c.plan, c.tenant_slug);
-            }
-            Err(e) => {
-                eprintln!("  ! license verify failed: {e}");
-            }
+        match license_preview(license) {
+            Some(c) => println!(
+                "  · license:   plan={} tenant={} (verified by the control plane)",
+                c.plan, c.tenant_slug
+            ),
+            None => eprintln!("  ! the provider returned a license this CLI cannot read"),
         }
     } else {
         println!("  · provider returned no MCPG license — using id_token only");
@@ -213,6 +221,29 @@ const SUCCESS_HTML: &str = r#"<!doctype html>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A license signed with a key the provider's JWKS does not publish still
+    /// shows its plan and org at login.
+    #[test]
+    fn the_login_summary_reads_a_license_the_jwks_cannot_verify() {
+        use base64::Engine as _;
+        let b64 = |s: &str| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(s);
+        let token = format!(
+            "{}.{}.{}",
+            b64(r#"{"alg":"EdDSA","typ":"mcpg-license+jwt","kid":"not-in-the-jwks"}"#),
+            b64(r#"{"plan":"team","tenant_slug":"acme","aud":["mcpg-cp"]}"#),
+            b64("signature")
+        );
+        assert_eq!(
+            license_preview(&token),
+            Some(LicensePreview {
+                plan: "team".into(),
+                tenant_slug: "acme".into(),
+            })
+        );
+        assert_eq!(license_preview("not-a-jwt"), None);
+        assert_eq!(license_preview("a.!!!.c"), None);
+    }
 
     #[test]
     fn logout_is_idempotent_when_no_creds_present() {
